@@ -12,7 +12,6 @@ set -e
 
 echo "[*] Updating system packages..."
 sudo apt-get update -y
-sudo apt-get upgrade -y
 
 echo "[*] Installing prerequisites..."
 sudo apt-get install -y ca-certificates curl gnupg git
@@ -29,7 +28,7 @@ echo "[*] Verifying Docker + Compose..."
 docker --version
 docker compose version
 
-REPO_URL="${1:-<REPLACE_WITH_YOUR_GITHUB_REPO_URL>}"
+REPO_URL="${1:-https://github.com/DarthWakamiya/Cyber-Range-Lab.git}"
 DEST_DIR="nmd-lab"
 
 if [ ! -d "$DEST_DIR" ]; then
