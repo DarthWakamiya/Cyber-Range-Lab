@@ -1,36 +1,62 @@
 #!/bin/bash
 # provision-vm.sh
 #
-# Run this ON a fresh Ubuntu 22.04 VM guest (e.g. one created on a Proxmox
-# host by your infra team). This script does NOT install or configure
-# Proxmox itself — Proxmox is the hypervisor layer and is assumed to
-# already exist; this only provisions the GUEST OS to run the lab.
+# One-shot, idempotent provisioning script for a fresh Ubuntu/Debian-based
+# Linux VM guest (Proxmox, VirtualBox, Kali, bare metal any of them).
+# Safe to run multiple times: every step checks whether it's already done
+# before doing it again.
 #
-# Usage: bash provision-vm.sh
+# Usage (from a totally fresh VM):
+#   git clone <this-repo-url>
+#   cd <repo-folder>
+#   bash scripts/provision-vm.sh
 
 set -e
 
-echo "[*] Updating system packages..."
+echo "[*] Refreshing package index..."
 sudo apt-get update -y
 
 echo "[*] Installing prerequisites..."
 sudo apt-get install -y ca-certificates curl gnupg git
 
-echo "[*] Installing Docker Engine + Compose plugin..."
+
+# Docker Engine
+
+echo "[*] Checking Docker Engine..."
 if ! command -v docker &> /dev/null; then
+  echo "    Not found installing via get.docker.com ..."
   curl -fsSL https://get.docker.com | sudo sh
-  sudo usermod -aG docker "$USER"
 else
-  echo "    Docker already installed, skipping engine install."
+  echo "    Docker Engine already installed, skipping."
 fi
 
+
+# Docker group
+
+NEWLY_ADDED_TO_DOCKER_GROUP=0
+if ! groups "$USER" | grep -qw docker; then
+  echo "[*] Adding $USER to the docker group..."
+  sudo usermod -aG docker "$USER"
+  NEWLY_ADDED_TO_DOCKER_GROUP=1
+else
+  echo "[*] $USER is already in the docker group."
+fi
+
+
+# Docker Compose plugin installed SYSTEM-WIDE so it works for every user
+# (including root via sudo), avoiding the "works without sudo, breaks with
+# sudo" mismatch you'd get installing it only under $HOME/.docker.
+
+echo "[*] Checking Docker Compose plugin..."
 if ! docker compose version &> /dev/null; then
-  echo "    Docker Compose plugin missing, installing it..."
+  echo "    Not found installing..."
   sudo apt-get install -y docker-compose-plugin || {
-    mkdir -p ~/.docker/cli-plugins
-    curl -SL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64 \
-      -o ~/.docker/cli-plugins/docker-compose
-    chmod +x ~/.docker/cli-plugins/docker-compose
+    echo "    apt package unavailable, falling back to direct binary download..."
+    sudo mkdir -p /usr/local/lib/docker/cli-plugins
+    sudo curl -fsSL \
+      https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64 \
+      -o /usr/local/lib/docker/cli-plugins/docker-compose
+    sudo chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
   }
 else
   echo "    Docker Compose plugin already installed, skipping."
@@ -40,24 +66,47 @@ echo "[*] Verifying Docker + Compose..."
 docker --version
 docker compose version
 
+
+# Get the lab source (skip cloning if we're already inside the repo)
+
 REPO_URL="${1:-https://github.com/DarthWakamiya/Cyber-Range-Lab.git}"
 DEST_DIR="Cyber-Range-Lab"
 
-if [ ! -d "$DEST_DIR" ]; then
+if [ -f "docker-compose.yml" ] && [ -f "server.js" ]; then
+  echo "[*] Already inside the lab repo, skipping clone."
+elif [ -d "$DEST_DIR" ]; then
+  echo "[*] $DEST_DIR already exists, pulling latest changes..."
+  cd "$DEST_DIR"
+  git pull
+else
   echo "[*] Cloning lab repository..."
   git clone "$REPO_URL" "$DEST_DIR"
-else
-  echo "    Repo directory already exists, pulling latest changes..."
-  (cd "$DEST_DIR" && git pull)
+  cd "$DEST_DIR"
 fi
 
-cd "$DEST_DIR"
+
+# Build & start the stack.
+# If we JUST added the user to the docker group in this same run, the
+# current shell session doesn't have that membership yet (normally requires
+# logout/login) so we use `sg docker` to apply it for this one command
+# without forcing the user to log out.
 
 echo "[*] Building and starting the lab (web + blue-team + log-injector)..."
-sudo docker compose up -d --build
+if [ "$NEWLY_ADDED_TO_DOCKER_GROUP" = "1" ]; then
+  sg docker -c "docker compose up -d --build"
+else
+  docker compose up -d --build
+fi
 
 echo ""
 echo "[+] Provisioning complete."
-echo "    Web app (Red Team target): http://$(hostname -I | awk '{print $1}'):3075"
-echo "    SSH (Blue Team access):    ssh analyst@$(hostname -I | awk '{print $1}') -p 2275"
+IP="$(hostname -I | awk '{print $1}')"
+echo "    Web app (Red Team target): http://${IP}:3075"
+echo "    SSH (Blue Team access):    ssh analyst@${IP} -p 2275"
 echo "    (SSH password: blue_team_rocks)"
+if [ "$NEWLY_ADDED_TO_DOCKER_GROUP" = "1" ]; then
+  echo ""
+  echo "    Note: you were just added to the 'docker' group. Log out and back"
+  echo "    in (or run 'newgrp docker') before running any further docker"
+  echo "    commands directly without this script."
+fi
