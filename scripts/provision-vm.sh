@@ -3,7 +3,7 @@
 #
 # Run this ON a fresh Ubuntu 22.04 VM guest (e.g. one created on a Proxmox
 # host by your infra team). This script does NOT install or configure
-# Proxmox itself Proxmox is the hypervisor layer and is assumed to
+# Proxmox itself — Proxmox is the hypervisor layer and is assumed to
 # already exist; this only provisions the GUEST OS to run the lab.
 #
 # Usage: bash provision-vm.sh
@@ -21,7 +21,19 @@ if ! command -v docker &> /dev/null; then
   curl -fsSL https://get.docker.com | sudo sh
   sudo usermod -aG docker "$USER"
 else
-  echo "    Docker already installed, skipping."
+  echo "    Docker already installed, skipping engine install."
+fi
+
+if ! docker compose version &> /dev/null; then
+  echo "    Docker Compose plugin missing, installing it..."
+  sudo apt-get install -y docker-compose-plugin || {
+    mkdir -p ~/.docker/cli-plugins
+    curl -SL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64 \
+      -o ~/.docker/cli-plugins/docker-compose
+    chmod +x ~/.docker/cli-plugins/docker-compose
+  }
+else
+  echo "    Docker Compose plugin already installed, skipping."
 fi
 
 echo "[*] Verifying Docker + Compose..."
@@ -29,7 +41,7 @@ docker --version
 docker compose version
 
 REPO_URL="${1:-https://github.com/DarthWakamiya/Cyber-Range-Lab.git}"
-DEST_DIR="nmd-lab"
+DEST_DIR="Cyber-Range-Lab"
 
 if [ ! -d "$DEST_DIR" ]; then
   echo "[*] Cloning lab repository..."
