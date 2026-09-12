@@ -1,0 +1,34 @@
+services:
+  # Red Team target: the vulnerable Admin Feedback System
+  web:
+    build: .
+    container_name: scenario75-web
+    ports:
+      - "3075:3075"
+    volumes:
+      - admin-logs:/opt/admin/logs
+    restart: unless-stopped
+
+  # Blue Team access: SSH box that can read the shared logs
+  blue-team:
+    build: ./blue-team
+    container_name: scenario75-blue-team
+    ports:
+      - "2275:22"
+    volumes:
+      - admin-logs:/opt/admin/logs
+    restart: unless-stopped
+
+  # One shot job: injects a simulated attack sequence into the logs on deploy
+  log-injector:
+    build: .
+    container_name: scenario75-log-injector
+    volumes:
+      - admin-logs:/opt/admin/logs
+      - ./scripts/inject-logs.sh:/inject-logs.sh
+    entrypoint: ["bash", "/inject-logs.sh"]
+    depends_on:
+      - web
+
+volumes:
+  admin-logs:

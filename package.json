@@ -1,0 +1,13 @@
+{
+  "name": "scenario75-admin-feedback",
+  "version": "1.0.0",
+  "description": "Intentionally vulnerable Admin Feedback System for Red vs Blue cyber range lab (SCENARIO75).",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "cookie-parser": "^1.4.6"
+  }
+}
